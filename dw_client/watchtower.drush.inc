@@ -175,6 +175,11 @@ function watchtower_get_default_report() {
     $metrics['site:patches'] = $patches;
   }
 
+  // Add Hacked.
+  if ($hacked = watchtower_check_hacked($modules)) {
+    $metrics['site:hacked'] = $hacked;
+  }
+
   return $report;
 }
 
@@ -219,6 +224,122 @@ function watchtower_search_patches($modules, $recursive = FALSE) {
   }
 
   return $patches;
+}
+
+/**
+ * Retrieves list of hacked modules.
+ *
+ * @param array $modules
+ *   List of modules in format of system_rebuild_module_data() function.
+ *
+ * @return array
+ *   Keyed array with results of checks.
+ */
+function watchtower_check_hacked($modules, $recursive = FALSE) {
+  $hacked = array();
+  $tmp_dir = '/tmp/dwt_hacked';
+  if (!is_dir($tmp_dir)) {
+    mkdir($tmp_dir);
+  }
+
+  $check_counter = 0;
+  $check_ok = 0;
+  $check_changed = array();
+  foreach ($modules as $module) {
+    if (empty($module->info['project']) || isset($hacked[$module->info['project']])) {
+      continue;
+    }
+    $module_name = $module->info['project'];
+    $module_version_name = $module_name . '-' . $module->info['version'];
+    $module_path = drupal_get_path('module', $module_name);
+    $check_path = $tmp_dir . '/' . $module_version_name;
+
+    $hacked_result = '[NOTICE] Can\'t download project version';
+    if (!is_dir($check_path)) {
+      $command = 'drush dl -y ' . $module_version_name . ' --destination=' . $tmp_dir;
+      $descriptors = array(
+        // stdin.
+        0 => array('pipe', 'r'),
+        // stdout.
+        1 => array('pipe', 'w'),
+        // stderr.
+        2 => array('pipe', 'w'),
+      );
+      $pipes = array();
+      if ($h = proc_open($command, $descriptors, $pipes, $root)) {
+        $output = '';
+        while (!feof($pipes[1])) {
+          $output .= fgets($pipes[1]);
+        }
+        $error = '';
+        while (!feof($pipes[2])) {
+          $error .= fgets($pipes[2]);
+        }
+
+        fclose($pipes[0]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+
+        $return_code = proc_close($h);
+
+      }
+      if (is_dir($tmp_dir . '/' . $module_name)) {
+        rename($tmp_dir . '/' . $module_name, $check_path);
+      }
+    }
+
+    if (is_dir($check_path)) {
+      if ($module_name == 'drupal') {
+        // @todo Drupal core should be checked folder by folder approach
+        continue;
+      }
+      $command = 'diff -r ' . $check_path . ' ' . DRUPAL_ROOT . '/'. $module_path . ' | diffstat';
+
+      $descriptors = array(
+        // stdin.
+        0 => array('pipe', 'r'),
+        // stdout.
+        1 => array('pipe', 'w'),
+        // stderr.
+        2 => array('pipe', 'w'),
+      );
+      $pipes = array();
+      if ($h = proc_open($command, $descriptors, $pipes, $root)) {
+        $output = '';
+        while (!feof($pipes[1])) {
+          $output .= fgets($pipes[1]);
+        }
+        $error = '';
+        while (!feof($pipes[2])) {
+          $error .= fgets($pipes[2]);
+        }
+
+        fclose($pipes[0]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+
+        $return_code = proc_close($h);
+
+        // @todo Drush outputs to err somehow.
+        if (trim($output) == '0 files changed') {
+          $hacked_result = "[OK] Project code mached";
+          $check_ok++;
+        }
+        else {
+          $hacked_result = "[WARNING] Project " . $module_name ." was changed\n";
+          $hacked_result .= $output;
+          $check_changed[] = $hacked_result;
+        }
+      }
+
+      $check_counter++;
+    }
+    $hacked[$module_name] = $hacked_result;
+  }
+  drush_print("Checked " . $check_counter . ' from ' . count($hacked) . ' modules.');
+  drush_print("Modules Ok: " . $check_ok);
+  drush_print("Modules changed: " . count($check_changed) . "\n" . implode("\n", $check_changed));
+  return $hacked;
 }
 
 /**
