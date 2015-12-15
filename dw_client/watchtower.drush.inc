@@ -289,11 +289,13 @@ function watchtower_check_hacked($modules, $recursive = FALSE) {
     }
 
     if (is_dir($check_path)) {
+
+      $exclude = '';
       if ($module_name == 'drupal') {
-        // @todo Drupal core should be checked folder by folder approach
-        continue;
+        $exclude = '--exclude=sites ';
       }
-      $command = 'diff -r ' . $check_path . ' ' . DRUPAL_ROOT . '/'. $module_path . ' | diffstat';
+
+      $command = 'diff -r ' . $exclude .  $check_path . ' ' . DRUPAL_ROOT . '/'. $module_path . ' | diffstat';
 
       $descriptors = array(
         // stdin.
@@ -337,8 +339,8 @@ function watchtower_check_hacked($modules, $recursive = FALSE) {
     $hacked[$module_name] = $hacked_result;
   }
   drush_print("Checked " . $check_counter . ' from ' . count($hacked) . ' modules.');
-  drush_print("Modules Ok: " . $check_ok);
-  drush_print("Modules changed: " . count($check_changed) . "\n" . implode("\n", $check_changed));
+  drush_print("Ok: " . $check_ok);
+  drush_print("Changed: " . count($check_changed) . "\n" . implode("\n", $check_changed));
   return $hacked;
 }
 
