@@ -237,7 +237,7 @@ function watchtower_search_patches($modules, $recursive = FALSE) {
  */
 function watchtower_check_hacked($modules, $recursive = FALSE) {
   $hacked = array();
-  $tmp_dir = '/tmp/dwt_hacked';
+  $tmp_dir = file_directory_temp() . '/dwt_hacked';
   if (!is_dir($tmp_dir)) {
     mkdir($tmp_dir);
   }
