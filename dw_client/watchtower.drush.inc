@@ -289,12 +289,22 @@ function watchtower_check_hacked($modules, $recursive = FALSE) {
     }
 
     if (is_dir($check_path)) {
-      $exclude = '';
+      $exclude = array();
       if ($module_name == 'drupal') {
-        $exclude = '--exclude=sites ';
+        $exclude[] = '--exclude=sites';
+
+        // Exclude custom profiles.
+        $exist_dir_list = file_scan_directory($check_path . '/profiles', '/.*/', array('recurse' => FALSE));
+        $current_dir_list = file_scan_directory(DRUPAL_ROOT . '/profiles', '/.*/', array('recurse' => FALSE));
+
+        foreach ($current_dir_list as $key => $item) {
+          if (!isset($exist_dir_list[$check_path . '/profiles/' . $item->filename])) {
+            $exclude[] = '--exclude=' . $item->filename;
+          }
+        }
       }
 
-      $command = 'diff -r ' . $exclude . $check_path . ' ' . $module_path . ' | diffstat';
+      $command = 'diff -r ' . implode(' \\' . PHP_EOL, $exclude) . ' ' . $check_path . ' ' . $module_path . ' | diffstat';
 
       $descriptors = array(
         // stdin.
