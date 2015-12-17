@@ -251,7 +251,7 @@ function watchtower_check_hacked($modules, $recursive = FALSE) {
     }
     $module_name = $module->info['project'];
     $module_version_name = $module_name . '-' . $module->info['version'];
-    $module_path = drupal_get_path('module', $module_name);
+    $module_path = DRUPAL_ROOT . '/'. drupal_get_path('module', $module_name);
     $check_path = $tmp_dir . '/' . $module_version_name;
 
     $hacked_result = '[NOTICE] Can\'t download project version';
@@ -289,13 +289,12 @@ function watchtower_check_hacked($modules, $recursive = FALSE) {
     }
 
     if (is_dir($check_path)) {
-
       $exclude = '';
       if ($module_name == 'drupal') {
         $exclude = '--exclude=sites ';
       }
 
-      $command = 'diff -r ' . $exclude .  $check_path . ' ' . DRUPAL_ROOT . '/'. $module_path . ' | diffstat';
+      $command = 'diff -r ' . $exclude . $check_path . ' ' . $module_path . ' | diffstat';
 
       $descriptors = array(
         // stdin.
@@ -324,11 +323,12 @@ function watchtower_check_hacked($modules, $recursive = FALSE) {
 
         // @todo Drush outputs to err somehow.
         if (trim($output) == '0 files changed') {
-          $hacked_result = "[OK] Project code mached";
+          $hacked_result = '[OK] Project code matched';
           $check_ok++;
         }
         else {
-          $hacked_result = "[WARNING] Project " . $module_name ." was changed\n";
+          $hacked_result = '[WARNING] Project ' . $module_name .' was changed' . PHP_EOL;
+          $hacked_result .= $module_path . PHP_EOL;
           $hacked_result .= $output;
           $check_changed[] = $hacked_result;
         }
@@ -338,9 +338,9 @@ function watchtower_check_hacked($modules, $recursive = FALSE) {
     }
     $hacked[$module_name] = $hacked_result;
   }
-  drush_print("Checked " . $check_counter . ' from ' . count($hacked) . ' modules.');
-  drush_print("Ok: " . $check_ok);
-  drush_print("Changed: " . count($check_changed) . "\n" . implode("\n", $check_changed));
+  drush_print('Checked ' . $check_counter . ' from ' . count($hacked) . ' modules.');
+  drush_print('Ok: ' . $check_ok);
+  drush_print('Changed: ' . count($check_changed) . PHP_EOL . implode(PHP_EOL, $check_changed));
   return $hacked;
 }
 
