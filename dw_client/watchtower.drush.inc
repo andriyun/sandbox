@@ -175,10 +175,8 @@ function watchtower_get_default_report() {
     $metrics['site:patches'] = $patches;
   }
 
-  // Add Hacked.
-  if ($hacked = watchtower_check_hacked($modules)) {
-    $metrics['site:hacked'] = $hacked;
-  }
+  // Add Hacked metric.
+  $metrics['site:hacked'] = watchtower_check_hacked($modules);
 
   return $report;
 }
@@ -241,6 +239,7 @@ function watchtower_check_hacked($modules) {
   if (!is_dir($tmp_dir)) {
     mkdir($tmp_dir);
   }
+
   $check_counter = 0;
   $check_ok = 0;
   $check_changed = array();
@@ -253,7 +252,6 @@ function watchtower_check_hacked($modules) {
     $module_path = DRUPAL_ROOT . '/'. drupal_get_path('module', $module_name);
     $check_path = $tmp_dir . '/' . $module_version_name;
 
-    $hacked_result = '[NOTICE] Can\'t download project version';
     if (!is_dir($check_path)) {
       _watchtower_run_command('drush dl -y ' . $module_version_name . ' --destination=' . $tmp_dir);
       if (is_dir($tmp_dir . '/' . $module_name)) {
@@ -279,12 +277,9 @@ function watchtower_check_hacked($modules) {
       _watchtower_run_command('echo \'' . implode(PHP_EOL, $files) . '\' | xargs -I % cp --parents % ' . $sandbox);
 
       // Check project regarding changes.
+      $hacked_result = FALSE;
       if ($result = _watchtower_run_command('diff -r ' . $check_path . ' ' . $sandbox . ' | diffstat')) {
-        if (isset($result['output']) && trim($result['output']) == '0 files changed') {
-          $hacked_result = '[OK] Project code matched';
-          $check_ok++;
-        }
-        else {
+        if (isset($result['output']) && trim($result['output']) != '0 files changed') {
           $hacked_result = '[WARNING] Project ' . $module_name .' was changed' . PHP_EOL;
           $hacked_result .= $module_path . PHP_EOL;
           $hacked_result .= $result['output'];
@@ -295,12 +290,18 @@ function watchtower_check_hacked($modules) {
       // Remove sandbox.
       _watchtower_run_command('rm -rf ' . $sandbox);
       $check_counter++;
+      if ($hacked_result) {
+        $hacked[$module_name] = $hacked_result;
+      }
     }
-    $hacked[$module_name] = $hacked_result;
+    else {
+      drush_print('[NOTICE] Can\'t download project version ' . $module_version_name);
+    }
   }
+
+  drush_print(implode(PHP_EOL, $check_changed));
   drush_print('Checked ' . $check_counter . ' from ' . count($hacked) . ' modules.');
-  drush_print('Ok: ' . $check_ok);
-  drush_print('Changed: ' . count($check_changed) . PHP_EOL . implode(PHP_EOL, $check_changed));
+  drush_print('Changed: ' . count($check_changed));
   return $hacked;
 }
 
