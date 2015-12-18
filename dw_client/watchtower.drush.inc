@@ -235,13 +235,12 @@ function watchtower_search_patches($modules, $recursive = FALSE) {
  * @return array
  *   Keyed array with results of checks.
  */
-function watchtower_check_hacked($modules, $recursive = FALSE) {
+function watchtower_check_hacked($modules) {
   $hacked = array();
   $tmp_dir = file_directory_temp() . '/dwt_hacked';
   if (!is_dir($tmp_dir)) {
     mkdir($tmp_dir);
   }
-
   $check_counter = 0;
   $check_ok = 0;
   $check_changed = array();
@@ -256,94 +255,45 @@ function watchtower_check_hacked($modules, $recursive = FALSE) {
 
     $hacked_result = '[NOTICE] Can\'t download project version';
     if (!is_dir($check_path)) {
-      $command = 'drush dl -y ' . $module_version_name . ' --destination=' . $tmp_dir;
-      $descriptors = array(
-        // stdin.
-        0 => array('pipe', 'r'),
-        // stdout.
-        1 => array('pipe', 'w'),
-        // stderr.
-        2 => array('pipe', 'w'),
-      );
-      $pipes = array();
-      if ($h = proc_open($command, $descriptors, $pipes, $root)) {
-        $output = '';
-        while (!feof($pipes[1])) {
-          $output .= fgets($pipes[1]);
-        }
-        $error = '';
-        while (!feof($pipes[2])) {
-          $error .= fgets($pipes[2]);
-        }
-
-        fclose($pipes[0]);
-        fclose($pipes[1]);
-        fclose($pipes[2]);
-
-        $return_code = proc_close($h);
-
-      }
+      _watchtower_run_command('drush dl -y ' . $module_version_name . ' --destination=' . $tmp_dir);
       if (is_dir($tmp_dir . '/' . $module_name)) {
         rename($tmp_dir . '/' . $module_name, $check_path);
       }
     }
 
     if (is_dir($check_path)) {
-      $exclude = array();
-      if ($module_name == 'drupal') {
-        $exclude[] = '--exclude=sites';
-
-        // Exclude custom profiles.
-        $exist_dir_list = file_scan_directory($check_path . '/profiles', '/.*/', array('recurse' => FALSE));
-        $current_dir_list = file_scan_directory(DRUPAL_ROOT . '/profiles', '/.*/', array('recurse' => FALSE));
-
-        foreach ($current_dir_list as $key => $item) {
-          if (!isset($exist_dir_list[$check_path . '/profiles/' . $item->filename])) {
-            $exclude[] = '--exclude=' . $item->filename;
-          }
-        }
+      // Prepare check sandbox.
+      // We need check only existing files.
+      $sandbox = $tmp_dir . '/' . $module_name . time();
+      if (!is_dir($sandbox)) {
+        mkdir($sandbox);
       }
+      $project_path = DRUPAL_ROOT . '/'. drupal_get_path('module', $module_name);
 
-      $command = 'diff -r ' . implode(' \\' . PHP_EOL, $exclude) . ' ' . $check_path . ' ' . $module_path . ' | diffstat';
+      $files = array();
+      foreach(file_scan_directory($check_path, '(.*)') as $key => $file) {
+        $files[] = str_replace($check_path . '/' , '', $file->uri);
+      }
+      // Change directory to project location and copy files
+      chdir($project_path);
+      _watchtower_run_command('echo \'' . implode(PHP_EOL, $files) . '\' | xargs -I % cp --parents % ' . $sandbox);
 
-      $descriptors = array(
-        // stdin.
-        0 => array('pipe', 'r'),
-        // stdout.
-        1 => array('pipe', 'w'),
-        // stderr.
-        2 => array('pipe', 'w'),
-      );
-      $pipes = array();
-      if ($h = proc_open($command, $descriptors, $pipes, $root)) {
-        $output = '';
-        while (!feof($pipes[1])) {
-          $output .= fgets($pipes[1]);
-        }
-        $error = '';
-        while (!feof($pipes[2])) {
-          $error .= fgets($pipes[2]);
-        }
-
-        fclose($pipes[0]);
-        fclose($pipes[1]);
-        fclose($pipes[2]);
-
-        $return_code = proc_close($h);
-
-        // @todo Drush outputs to err somehow.
-        if (trim($output) == '0 files changed') {
+      // Check project regarding changes.
+      if ($result = _watchtower_run_command('diff -r ' . $check_path . ' ' . $sandbox . ' | diffstat')) {
+        if (isset($result['output']) && trim($result['output']) == '0 files changed') {
           $hacked_result = '[OK] Project code matched';
           $check_ok++;
         }
         else {
           $hacked_result = '[WARNING] Project ' . $module_name .' was changed' . PHP_EOL;
           $hacked_result .= $module_path . PHP_EOL;
-          $hacked_result .= $output;
+          $hacked_result .= $result['output'];
           $check_changed[] = $hacked_result;
         }
       }
 
+      // Remove sandbox.
+      _watchtower_run_command('rm -rf ' . $sandbox);
       $check_counter++;
     }
     $hacked[$module_name] = $hacked_result;
@@ -352,6 +302,53 @@ function watchtower_check_hacked($modules, $recursive = FALSE) {
   drush_print('Ok: ' . $check_ok);
   drush_print('Changed: ' . count($check_changed) . PHP_EOL . implode(PHP_EOL, $check_changed));
   return $hacked;
+}
+
+/**
+ * Helper function for run command in console
+ *
+ * @param string $command
+ *   String with command.
+ *
+ * @return array
+ *   Keyed array with command run results.
+ */
+function _watchtower_run_command($command) {
+  $result = array();
+  $descriptors = array(
+    // stdin.
+    0 => array('pipe', 'r'),
+    // stdout.
+    1 => array('pipe', 'w'),
+    // stderr.
+    2 => array('pipe', 'w'),
+  );
+  $pipes = array();
+  if ($h = proc_open($command, $descriptors, $pipes, $root)) {
+    $output = '';
+    while (!feof($pipes[1])) {
+      $output .= fgets($pipes[1]);
+    }
+    $error = '';
+    while (!feof($pipes[2])) {
+      $error .= fgets($pipes[2]);
+    }
+
+    fclose($pipes[0]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+
+    $return_code = proc_close($h);
+
+    // @todo Drush outputs to err somehow.
+    if ($output) {
+      $result['output'] = $output;
+    }
+    if ($error) {
+      $result['error'] = $error;
+    }
+  }
+  return $result;
 }
 
 /**
