@@ -241,7 +241,6 @@ function watchtower_check_hacked($modules) {
   }
 
   $check_counter = 0;
-  $check_ok = 0;
   $check_changed = array();
   foreach ($modules as $module) {
     if (empty($module->info['project']) || isset($hacked[$module->info['project']])) {
@@ -325,7 +324,12 @@ function _watchtower_run_command($command) {
     2 => array('pipe', 'w'),
   );
   $pipes = array();
-  if ($h = proc_open($command, $descriptors, $pipes, $root)) {
+
+  try {
+    $h = proc_open($command, $descriptors, $pipes, $root);
+    if (!$h) {
+      throw new Exception('Call of command ' . $command . ' failed');
+    }
     $output = '';
     while (!feof($pipes[1])) {
       $output .= fgets($pipes[1]);
@@ -339,7 +343,7 @@ function _watchtower_run_command($command) {
     fclose($pipes[1]);
     fclose($pipes[2]);
 
-    $return_code = proc_close($h);
+    proc_close($h);
 
     // @todo Drush outputs to err somehow.
     if ($output) {
@@ -348,7 +352,10 @@ function _watchtower_run_command($command) {
     if ($error) {
       $result['error'] = $error;
     }
+  } catch (Exception $e) {
+    drush_print($e->getMessage());
   }
+
   return $result;
 }
 
