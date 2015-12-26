@@ -314,7 +314,11 @@ function watchtower_check_hacked($modules) {
  *   Keyed array with command run results.
  */
 function _watchtower_run_command($command) {
-  $result = array();
+  $result = array(
+    'stdout' => '',
+    'stderr' => '',
+    'success' => TRUE,
+  );
   $descriptors = array(
     // stdin.
     0 => array('pipe', 'r'),
@@ -328,7 +332,7 @@ function _watchtower_run_command($command) {
   try {
     $h = proc_open($command, $descriptors, $pipes, $root);
     if (!$h) {
-      throw new Exception('Call of command ' . $command . ' failed');
+      throw new Exception('Failed command call: ' . $command);
     }
     $output = '';
     while (!feof($pipes[1])) {
@@ -339,6 +343,8 @@ function _watchtower_run_command($command) {
       $error .= fgets($pipes[2]);
     }
 
+    $proc_status = proc_get_status($h);
+
     fclose($pipes[0]);
     fclose($pipes[1]);
     fclose($pipes[2]);
@@ -347,10 +353,16 @@ function _watchtower_run_command($command) {
 
     // @todo Drush outputs to err somehow.
     if ($output) {
-      $result['output'] = $output;
+      $result['stdout'] .= $output;
     }
     if ($error) {
-      $result['error'] = $error;
+      $result['stderr'] .= $error;
+
+      if ($proc_status['exitcode'] != 0) {
+        drush_print('Unsuccessful command call: ' . $command);
+        drush_print($error);
+        $result['success'] = FALSE;
+      }
     }
   } catch (Exception $e) {
     drush_print($e->getMessage());
