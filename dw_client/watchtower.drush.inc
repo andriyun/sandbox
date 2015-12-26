@@ -235,72 +235,77 @@ function watchtower_search_patches($modules, $recursive = FALSE) {
  */
 function watchtower_check_hacked($modules) {
   $hacked = array();
+  $registry = array();
   $tmp_dir = file_directory_temp() . '/dwt_hacked';
   if (!is_dir($tmp_dir)) {
     mkdir($tmp_dir);
   }
 
   $check_counter = 0;
-  $check_changed = array();
   foreach ($modules as $module) {
-    if (empty($module->info['project']) || isset($hacked[$module->info['project']])) {
+    if (empty($module->info['project']) || isset($registry[$module->info['project']])) {
       continue;
     }
+
     $module_name = $module->info['project'];
     $module_version_name = $module_name . '-' . $module->info['version'];
     $module_path = DRUPAL_ROOT . '/'. drupal_get_path('module', $module_name);
     $check_path = $tmp_dir . '/' . $module_version_name;
 
+    // Add module to registry for prevent check the same module few times.
+    $registry[$module_name] = TRUE;
+
+    // Module release version can be downloaded on previous checks.
     if (!is_dir($check_path)) {
-      _watchtower_run_command('drush dl -y ' . $module_version_name . ' --destination=' . $tmp_dir);
-      if (is_dir($tmp_dir . '/' . $module_name)) {
-        rename($tmp_dir . '/' . $module_name, $check_path);
+      $result = _watchtower_run_command('drush dl -y ' . $module_version_name . ' --destination=' . $tmp_dir);
+      if (!$result['success']) {
+        continue;
+      }
+      rename($tmp_dir . '/' . $module_name, $check_path);
+    }
+
+    // Prepare check sandbox.
+    // We need check only existing files.
+    $sandbox = $tmp_dir . '/' . $module_name . time();
+    if (!is_dir($sandbox)) {
+      mkdir($sandbox);
+    }
+    $project_path = DRUPAL_ROOT . '/'. drupal_get_path('module', $module_name);
+
+    $files = array();
+    foreach(file_scan_directory($check_path, '(.*)') as $key => $file) {
+      $files[] = str_replace($check_path . '/' , '', $file->uri);
+    }
+    // Change directory to project location and copy files
+    chdir($project_path);
+    $result = _watchtower_run_command('echo \'' . implode(PHP_EOL, $files) . '\' | xargs -I % cp --parents % ' . $sandbox);
+    if (!$result['success']) {
+      continue;
+    }
+
+    // Check project regarding changes.
+    if ($result = _watchtower_run_command('diff -r ' . $check_path . ' ' . $sandbox . ' | diffstat')) {
+      if (!$result['success']) {
+        continue;
+      }
+
+      if (isset($result['stdout']) && trim($result['stdout']) != '0 files changed') {
+        $hacked[$module_name] = '[WARNING] Project ' . $module_name .' was changed' . PHP_EOL
+          . $module_path . PHP_EOL
+          . $result['stdout'];
       }
     }
 
-    if (is_dir($check_path)) {
-      // Prepare check sandbox.
-      // We need check only existing files.
-      $sandbox = $tmp_dir . '/' . $module_name . time();
-      if (!is_dir($sandbox)) {
-        mkdir($sandbox);
-      }
-      $project_path = DRUPAL_ROOT . '/'. drupal_get_path('module', $module_name);
+    // Remove sandbox.
+    _watchtower_run_command('chmod 777 -R ' . $sandbox);
+    _watchtower_run_command('rm -rf ' . $sandbox);
 
-      $files = array();
-      foreach(file_scan_directory($check_path, '(.*)') as $key => $file) {
-        $files[] = str_replace($check_path . '/' , '', $file->uri);
-      }
-      // Change directory to project location and copy files
-      chdir($project_path);
-      _watchtower_run_command('echo \'' . implode(PHP_EOL, $files) . '\' | xargs -I % cp --parents % ' . $sandbox);
-
-      // Check project regarding changes.
-      $hacked_result = FALSE;
-      if ($result = _watchtower_run_command('diff -r ' . $check_path . ' ' . $sandbox . ' | diffstat')) {
-        if (isset($result['output']) && trim($result['output']) != '0 files changed') {
-          $hacked_result = '[WARNING] Project ' . $module_name .' was changed' . PHP_EOL;
-          $hacked_result .= $module_path . PHP_EOL;
-          $hacked_result .= $result['output'];
-          $check_changed[] = $hacked_result;
-        }
-      }
-
-      // Remove sandbox.
-      _watchtower_run_command('rm -rf ' . $sandbox);
-      $check_counter++;
-      if ($hacked_result) {
-        $hacked[$module_name] = $hacked_result;
-      }
-    }
-    else {
-      drush_print('[NOTICE] Can\'t download project version ' . $module_version_name);
-    }
+    $check_counter++;
   }
 
-  drush_print(implode(PHP_EOL, $check_changed));
-  drush_print('Checked ' . $check_counter . ' from ' . count($hacked) . ' modules.');
-  drush_print('Changed: ' . count($check_changed));
+  drush_print(implode(PHP_EOL, $hacked));
+  drush_print('Checked ' . $check_counter . ' from ' . count($registry) . ' modules.');
+  drush_print('Changed: ' . count($hacked) . ' projects.');
   return $hacked;
 }
 
@@ -370,6 +375,7 @@ function _watchtower_run_command($command) {
 
   return $result;
 }
+
 
 /**
  * Scans nginx sites and try to rend report on each.
