@@ -273,8 +273,12 @@ function watchtower_check_hacked($modules) {
     $project_path = DRUPAL_ROOT . '/'. drupal_get_path('module', $module_name);
 
     $files = array();
-    foreach(file_scan_directory($check_path, '(.*)') as $key => $file) {
-      $files[] = str_replace($check_path . '/' , '', $file->uri);
+    foreach(_watchtower_file_scan_directory($check_path, '/.*/', array('.', '..', 'CVS', '.svn', '.git')) as $key => $file) {
+      $file_path = str_replace($check_path . '/' , '', $file->filename);
+      if (!file_exists($project_path . '/' . $file_path)) {
+        continue;
+      }
+      $files[] = $file_path;
     }
     // Change directory to project location and copy files
     chdir($project_path);
@@ -375,7 +379,6 @@ function _watchtower_run_command($command) {
 
   return $result;
 }
-
 
 /**
  * Scans nginx sites and try to rend report on each.
@@ -482,4 +485,43 @@ function _watchtower_valid_url($url) {
         (?:[\w#!:\.\?\+=&@$'~*,;\/\(\)\[\]\-]|%[0-9a-f]{2})   # The path and query (optional)
       *)?
     $/xi", $url);
+}
+
+/**
+ * Copy of version of the core function from Hacked! module.
+ * We use this function for scan directory tree for get hidden files too.
+ *
+ * @see hacked_file_scan_directory().
+ */
+function _watchtower_file_scan_directory($dir, $mask, $nomask = array('.', '..', 'CVS'), $callback = 0, $recurse = TRUE, $key = 'filename', $min_depth = 0, $depth = 0) {
+  $key = (in_array($key, array('filename', 'basename', 'name')) ? $key : 'filename');
+  $files = array();
+
+  if (is_dir($dir) && $handle = opendir($dir)) {
+    while (FALSE !== ($file = readdir($handle))) {
+      if (!in_array($file, $nomask)) {
+        if (is_dir("$dir/$file") && $recurse) {
+          // Give priority to files in this folder by merging them in after any subdirectory files.
+          $files = array_merge(_watchtower_file_scan_directory("$dir/$file", $mask, $nomask, $callback, $recurse, $key, $min_depth, $depth + 1), $files);
+        }
+        elseif ($depth >= $min_depth && preg_match($mask, $file)) {
+          // Always use this match over anything already set in $files with the same $$key.
+          $filename = "$dir/$file";
+          $basename = basename($file);
+          $name = substr($basename, 0, strrpos($basename, '.'));
+          $files[$$key] = new stdClass();
+          $files[$$key]->filename = $filename;
+          $files[$$key]->basename = $basename;
+          $files[$$key]->name = $name;
+          if ($callback) {
+            $callback($filename);
+          }
+        }
+      }
+    }
+
+    closedir($handle);
+  }
+
+  return $files;
 }
