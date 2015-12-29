@@ -28,6 +28,11 @@ function watchtower_drush_command() {
         'drush dwr --url=https://example.com/xmlrpc.php' => 'Same as above, but using the server.',
       ),
     ),
+    'dw_hacked_test' => array(
+      'callback' => 'watchtower_hacked_test',
+      'core' => array('7'),
+      'bootstrap' => DRUSH_BOOTSTRAP_DRUPAL_FULL,
+    ),
     'dw_report_nginx' => array(
       'aliases' => array('dwn'),
       'callback' => 'watchtower_drush_report_nginx',
@@ -314,6 +319,11 @@ function watchtower_check_hacked($modules) {
   return $hacked;
 }
 
+
+function watchtower_hacked_test(){
+  $modules = system_rebuild_module_data();
+  watchtower_check_hacked($modules);
+}
 /**
  * Helper function for run command in console
  *
