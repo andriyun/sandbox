@@ -258,7 +258,8 @@ function watchtower_check_hacked($modules) {
     // Module release version can be downloaded on previous checks.
     if (!is_dir($check_path)) {
       $result = _watchtower_run_command('drush dl -y ' . $module_version_name . ' --destination=' . $tmp_dir);
-      if (!$result['success']) {
+      if (!$result['success'] || !is_dir($tmp_dir . '/' . $module_name)) {
+        drush_print('Download project version ' . $module_version_name . ' unsuccessful!');
         continue;
       }
       rename($tmp_dir . '/' . $module_name, $check_path);
