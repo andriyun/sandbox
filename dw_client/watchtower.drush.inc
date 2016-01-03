@@ -350,7 +350,7 @@ function _watchtower_run_command($command) {
   $pipes = array();
 
   try {
-    $h = proc_open($command, $descriptors, $pipes, $root);
+    $h = proc_open($command, $descriptors, $pipes);
     if (!$h) {
       throw new Exception('Failed command call: ' . $command);
     }
