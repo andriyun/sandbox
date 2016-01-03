@@ -379,8 +379,10 @@ function _watchtower_run_command($command) {
       $result['stderr'] .= $error;
 
       if ($proc_status['exitcode'] != 0) {
-        drush_print('Unsuccessful command call: ' . $command);
-        drush_print($error);
+        if (function_exists('drush_log')) {
+          drush_print('Unsuccessful command call: ' . $command);
+          drush_print($error);
+        }
         $result['success'] = FALSE;
       }
     }
