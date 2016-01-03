@@ -234,6 +234,11 @@ function watchtower_search_patches($modules, $recursive = FALSE) {
  *   Keyed array with results of checks.
  */
 function watchtower_check_hacked($modules) {
+  // We use hacked function only in drush mode.
+  if (!drupal_is_cli() || !function_exists('drush_main')) {
+    return;
+  }
+
   $hacked = array();
   $registry = array();
   $tmp_dir = file_directory_temp() . '/dwt_hacked';
@@ -379,10 +384,8 @@ function _watchtower_run_command($command) {
       $result['stderr'] .= $error;
 
       if ($proc_status['exitcode'] != 0) {
-        if (function_exists('drush_log')) {
-          drush_log('Unsuccessful command call: ' . $command, 'error');
-          drush_log($error, 'error');
-        }
+        drush_log('Unsuccessful command call: ' . $command, 'error');
+        drush_log($error, 'error');
         $result['success'] = FALSE;
       }
     }
