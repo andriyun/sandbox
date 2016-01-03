@@ -239,6 +239,11 @@ function watchtower_search_patches($modules, $recursive = FALSE) {
  *   Keyed array with results of checks.
  */
 function watchtower_check_hacked($modules) {
+  // We use hacked function only in drush mode.
+  if (!drupal_is_cli() || !function_exists('drush_main')) {
+    return;
+  }
+
   $hacked = array();
   $registry = array();
   $tmp_dir = file_directory_temp() . '/dwt_hacked';
@@ -273,7 +278,7 @@ function watchtower_check_hacked($modules) {
       }
 
       if (!is_dir($tmp_dir . '/' . $module_name)) {
-        drush_print('Download project version ' . $module_version_name . ' unsuccessful!');
+        drush_log('Download project version ' . $module_version_name . ' unsuccessful!', 'error');
         continue;
       }
 
@@ -323,9 +328,9 @@ function watchtower_check_hacked($modules) {
     $check_counter++;
   }
 
-  drush_print(implode(PHP_EOL, $hacked));
-  drush_print('Checked ' . $check_counter . ' from ' . count($registry) . ' modules.');
-  drush_print('Changed: ' . count($hacked) . ' projects.');
+  drush_log(implode(PHP_EOL, $hacked), 'warning');
+  drush_log('Checked ' . $check_counter . ' from ' . count($registry) . ' modules.', 'notice');
+  drush_log('Changed: ' . count($hacked) . ' projects.', 'notice');
   return $hacked;
 }
 
@@ -360,7 +365,7 @@ function _watchtower_run_command($command) {
   $pipes = array();
 
   try {
-    $h = proc_open($command, $descriptors, $pipes, $root);
+    $h = proc_open($command, $descriptors, $pipes);
     if (!$h) {
       throw new Exception('Failed command call: ' . $command);
     }
@@ -389,13 +394,13 @@ function _watchtower_run_command($command) {
       $result['stderr'] .= $error;
 
       if ($proc_status['exitcode'] != 0) {
-        drush_print('Unsuccessful command call: ' . $command);
-        drush_print($error);
+        drush_log('Unsuccessful command call: ' . $command, 'error');
+        drush_log($error, 'error');
         $result['success'] = FALSE;
       }
     }
   } catch (Exception $e) {
-    drush_print($e->getMessage());
+    drush_log($e->getMessage(), 'error');
   }
 
   return $result;
